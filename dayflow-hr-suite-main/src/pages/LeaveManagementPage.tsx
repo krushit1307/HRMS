@@ -437,8 +437,8 @@ const LeaveManagementPage = () => {
                   <MagneticButton
                     variant="secondary"
                     className="w-full"
-                    onClick={(e) => {
-                      e.preventDefault();
+                    type="button"
+                    onClick={() => {
                       setIsModalOpen(false);
                     }}
                   >
