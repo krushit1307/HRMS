@@ -37,8 +37,25 @@ const itemVariants = {
   },
 };
 
+import { storageService } from '@/services/storage';
+import { useState, useEffect } from 'react';
+
 const ProfilePage = () => {
   const { user } = useAuth();
+  const [stats, setStats] = useState({ daysPresent: 0, leaveBalance: 0 });
+
+  useEffect(() => {
+    if (user) {
+      const attendance = storageService.getAttendanceByUserId(user.id);
+      const leaves = storageService.getLeavesByUserId(user.id);
+
+      const daysPresent = attendance.filter(a => a.status === 'present').length;
+      const leavesTaken = leaves.filter(l => l.status === 'approved').reduce((acc, curr) => acc + curr.days, 0);
+      const leaveBalance = Math.max(0, 20 - leavesTaken);
+
+      setStats({ daysPresent, leaveBalance });
+    }
+  }, [user]);
 
   const profileData = {
     name: user?.name || 'John Doe',
@@ -122,13 +139,13 @@ const ProfilePage = () => {
               <div className="mt-6 grid grid-cols-2 gap-4">
                 <div className="rounded-xl bg-secondary/30 p-4">
                   <p className="font-display text-2xl font-bold text-foreground">
-                    248
+                    {stats.daysPresent}
                   </p>
                   <p className="text-xs text-muted-foreground">Days Present</p>
                 </div>
                 <div className="rounded-xl bg-secondary/30 p-4">
                   <p className="font-display text-2xl font-bold text-foreground">
-                    12
+                    {stats.leaveBalance}
                   </p>
                   <p className="text-xs text-muted-foreground">Leave Balance</p>
                 </div>

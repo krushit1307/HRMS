@@ -3,47 +3,28 @@ import { Check, X, Clock, User, Calendar } from 'lucide-react';
 import { FloatingCard } from '@/components/ui/floating-card';
 import { MagneticButton } from '@/components/ui/magnetic-button';
 
-interface LeaveRequest {
-  id: string;
-  name: string;
-  type: 'sick' | 'paid' | 'unpaid';
-  startDate: string;
-  endDate: string;
-  status: 'pending' | 'approved' | 'rejected';
-  days: number;
-}
 
-const leaveRequests: LeaveRequest[] = [
-  {
-    id: '1',
-    name: 'Sarah Chen',
-    type: 'paid',
-    startDate: 'Jan 15, 2025',
-    endDate: 'Jan 17, 2025',
-    status: 'pending',
-    days: 3,
-  },
-  {
-    id: '2',
-    name: 'Mike Johnson',
-    type: 'sick',
-    startDate: 'Jan 14, 2025',
-    endDate: 'Jan 14, 2025',
-    status: 'pending',
-    days: 1,
-  },
-  {
-    id: '3',
-    name: 'Emily Davis',
-    type: 'unpaid',
-    startDate: 'Jan 20, 2025',
-    endDate: 'Jan 25, 2025',
-    status: 'pending',
-    days: 6,
-  },
-];
+
+import { storageService, LeaveRequest } from '@/services/storage';
+import { useState, useEffect } from 'react';
 
 export const LeaveRequestsWidget = () => {
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+
+  useEffect(() => {
+    // Poll or load requests
+    const loadRequests = () => {
+      const allLeaves = storageService.getLeaves();
+      // Filter for pending only
+      const pending = allLeaves.filter(l => l.status === 'pending');
+      setLeaveRequests(pending);
+    };
+
+    loadRequests();
+    // In a real app we'd use a subscription or query invalidation
+    const interval = setInterval(loadRequests, 2000); // Simple polling for demo
+    return () => clearInterval(interval);
+  }, []);
   const getTypeColor = (type: LeaveRequest['type']) => {
     switch (type) {
       case 'sick':
@@ -78,10 +59,10 @@ export const LeaveRequestsWidget = () => {
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-primary font-medium">
-                  {request.name.charAt(0)}
+                  {request.employeeName.charAt(0)}
                 </div>
                 <div>
-                  <p className="font-medium text-foreground">{request.name}</p>
+                  <p className="font-medium text-foreground">{request.employeeName}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     <span
                       className={`rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${getTypeColor(

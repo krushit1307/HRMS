@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, Search, User, Settings, LogOut, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { ModeToggle } from '@/components/ui/theme-toggle';
+
 
 export const Header = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -54,6 +56,9 @@ export const Header = () => {
       </div>
 
       <div className="flex items-center gap-4">
+        {/* Theme Toggle */}
+        <ModeToggle />
+
         {/* Notifications */}
         <div ref={notificationsRef} className="relative">
           <button
@@ -85,13 +90,12 @@ export const Header = () => {
                       className="flex items-start gap-3 border-b border-border/50 p-4 transition-colors hover:bg-muted/50"
                     >
                       <div
-                        className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${
-                          notification.type === 'success'
-                            ? 'bg-success'
-                            : notification.type === 'warning'
+                        className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${notification.type === 'success'
+                          ? 'bg-success'
+                          : notification.type === 'warning'
                             ? 'bg-warning'
                             : 'bg-primary'
-                        }`}
+                          }`}
                       />
                       <div className="flex-1">
                         <p className="text-sm font-medium text-foreground">
@@ -128,9 +132,8 @@ export const Header = () => {
               <p className="text-xs text-muted-foreground capitalize">{user?.role}</p>
             </div>
             <ChevronDown
-              className={`hidden h-4 w-4 text-muted-foreground transition-transform md:block ${
-                isProfileOpen ? 'rotate-180' : ''
-              }`}
+              className={`hidden h-4 w-4 text-muted-foreground transition-transform md:block ${isProfileOpen ? 'rotate-180' : ''
+                }`}
             />
           </button>
 

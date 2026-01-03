@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { storageService } from '@/services/storage';
 
 export type UserRole = 'admin' | 'hr' | 'employee';
 
@@ -20,57 +21,37 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string, employeeId: string) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock users for demo
-const mockUsers: Record<string, User & { password: string }> = {
-  'admin@dayflow.com': {
-    id: '1',
-    email: 'admin@dayflow.com',
-    password: 'admin123',
-    name: 'Alex Johnson',
-    role: 'admin',
-    employeeId: 'EMP001',
-    department: 'Management',
-    position: 'HR Director',
-    joinDate: '2022-01-15',
-    phone: '+1 (555) 123-4567',
-    address: '123 Corporate Ave, Suite 500',
-  },
-  'employee@dayflow.com': {
-    id: '2',
-    email: 'employee@dayflow.com',
-    password: 'employee123',
-    name: 'Sarah Chen',
-    role: 'employee',
-    employeeId: 'EMP042',
-    department: 'Engineering',
-    position: 'Senior Developer',
-    joinDate: '2023-03-20',
-    phone: '+1 (555) 987-6543',
-    address: '456 Tech Lane, Building B',
-  },
-};
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load user from local storage on mount (simulating session persistence)
+  useEffect(() => {
+    const storedUser = localStorage.getItem('dayflow_user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+    setIsLoading(false);
+  }, []);
 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
-    
+
     // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const mockUser = mockUsers[email.toLowerCase()];
-    
-    if (mockUser && mockUser.password === password) {
-      const { password: _, ...userWithoutPassword } = mockUser;
-      setUser(userWithoutPassword);
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    const validUser = storageService.verifyCredentials(email, password);
+
+    if (validUser) {
+      setUser(validUser);
+      localStorage.setItem('dayflow_user', JSON.stringify(validUser));
       setIsLoading(false);
     } else {
       setIsLoading(false);
@@ -78,8 +59,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const register = async (name: string, email: string, password: string, employeeId: string) => {
+    setIsLoading(true);
+
+    // Simulate API call
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // Check if user exists
+    const existingUser = storageService.getUserByEmail(email);
+    if (existingUser) {
+      setIsLoading(false);
+      throw new Error('Email already registered');
+    }
+
+    const newUser: User = {
+      id: crypto.randomUUID(),
+      email,
+      name,
+      role: 'employee', // Default role
+      employeeId,
+      department: 'Unassigned',
+      position: 'Employee',
+      joinDate: new Date().toISOString().split('T')[0],
+    };
+
+    const createdUser = storageService.addUser(newUser, password);
+    setUser(createdUser);
+    localStorage.setItem('dayflow_user', JSON.stringify(createdUser));
+    setIsLoading(false);
+  };
+
   const logout = () => {
     setUser(null);
+    localStorage.removeItem('dayflow_user');
   };
 
   return (
@@ -88,6 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         user,
         isAuthenticated: !!user,
         login,
+        register,
         logout,
         isLoading,
       }}

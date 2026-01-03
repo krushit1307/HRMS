@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar,
   Clock,
@@ -16,6 +16,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { FloatingCard } from '@/components/ui/floating-card';
 import { MagneticButton } from '@/components/ui/magnetic-button';
 import { useAuth } from '@/contexts/AuthContext';
+import { storageService, LeaveRequest } from '@/services/storage';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -34,68 +35,71 @@ const itemVariants = {
   },
 };
 
-interface LeaveRequest {
-  id: string;
-  employeeName: string;
-  type: 'paid' | 'sick' | 'unpaid';
-  startDate: string;
-  endDate: string;
-  days: number;
-  status: 'pending' | 'approved' | 'rejected';
-  reason: string;
-}
-
-const mockLeaveRequests: LeaveRequest[] = [
-  {
-    id: '1',
-    employeeName: 'Sarah Chen',
-    type: 'paid',
-    startDate: '2025-01-15',
-    endDate: '2025-01-17',
-    days: 3,
-    status: 'pending',
-    reason: 'Family vacation',
-  },
-  {
-    id: '2',
-    employeeName: 'Mike Johnson',
-    type: 'sick',
-    startDate: '2025-01-10',
-    endDate: '2025-01-10',
-    days: 1,
-    status: 'approved',
-    reason: 'Medical appointment',
-  },
-  {
-    id: '3',
-    employeeName: 'Emily Davis',
-    type: 'unpaid',
-    startDate: '2025-01-20',
-    endDate: '2025-01-25',
-    days: 6,
-    status: 'rejected',
-    reason: 'Personal matters',
-  },
-  {
-    id: '4',
-    employeeName: 'You',
-    type: 'paid',
-    startDate: '2025-02-01',
-    endDate: '2025-02-05',
-    days: 5,
-    status: 'pending',
-    reason: 'Vacation',
-  },
-];
-
 const LeaveManagementPage = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'hr';
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
 
-  const filteredRequests = mockLeaveRequests.filter((req) => {
-    if (!isAdmin) return req.employeeName === 'You';
+  // Form State
+  const [leaveType, setLeaveType] = useState<'paid' | 'sick' | 'unpaid'>('paid');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [reason, setReason] = useState('');
+
+  useEffect(() => {
+    if (user) {
+      loadRequests();
+    }
+  }, [user]);
+
+  const loadRequests = () => {
+    const allRequests = storageService.getLeaves();
+    setRequests(allRequests);
+  };
+
+  const handleApplyLeave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    // Simple day calculation
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+    const newRequest: LeaveRequest = {
+      id: crypto.randomUUID(),
+      userId: user.id,
+      employeeName: user.name,
+      type: leaveType,
+      startDate,
+      endDate,
+      days: diffDays,
+      status: 'pending',
+      reason,
+    };
+
+    storageService.addLeave(newRequest);
+    loadRequests();
+    setIsModalOpen(false);
+    // Reset form
+    setStartDate('');
+    setEndDate('');
+    setReason('');
+  };
+
+  const handleUpdateStatus = (id: string, status: 'approved' | 'rejected') => {
+    const request = requests.find(r => r.id === id);
+    if (request) {
+      storageService.updateLeave({ ...request, status });
+      loadRequests();
+    }
+  };
+
+  const filteredRequests = requests.filter((req) => {
+    if (!isAdmin && req.userId !== user?.id) return false;
     if (activeTab === 'all') return true;
     return req.status === activeTab;
   });
@@ -122,8 +126,9 @@ const LeaveManagementPage = () => {
     }
   };
 
+  // Calculate balances from storage or mock
   const leaveBalance = {
-    paid: 12,
+    paid: 12, // This could be calculated from storage too
     sick: 5,
     unpaid: 'Unlimited',
   };
@@ -167,22 +172,20 @@ const LeaveManagementPage = () => {
             <FloatingCard key={type} delay={index * 0.1}>
               <div className="flex items-center gap-4">
                 <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl ${
-                    type === 'paid'
-                      ? 'bg-success/10'
-                      : type === 'sick'
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl ${type === 'paid'
+                    ? 'bg-success/10'
+                    : type === 'sick'
                       ? 'bg-destructive/10'
                       : 'bg-warning/10'
-                  }`}
+                    }`}
                 >
                   <Calendar
-                    className={`h-6 w-6 ${
-                      type === 'paid'
-                        ? 'text-success'
-                        : type === 'sick'
+                    className={`h-6 w-6 ${type === 'paid'
+                      ? 'text-success'
+                      : type === 'sick'
                         ? 'text-destructive'
                         : 'text-warning'
-                    }`}
+                      }`}
                   />
                 </div>
                 <div>
@@ -205,38 +208,35 @@ const LeaveManagementPage = () => {
         </motion.div>
 
         {/* Filters */}
-        {isAdmin && (
-          <motion.div variants={itemVariants}>
-            <FloatingCard className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              {/* Tabs */}
-              <div className="flex gap-2">
-                {(['all', 'pending', 'approved', 'rejected'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`rounded-lg px-4 py-2 text-sm font-medium capitalize transition-colors ${
-                      activeTab === tab
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+        <motion.div variants={itemVariants}>
+          <FloatingCard className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            {/* Tabs */}
+            <div className="flex gap-2">
+              {(['all', 'pending', 'approved', 'rejected'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium capitalize transition-colors ${activeTab === tab
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                     }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
 
-              {/* Search */}
-              <div className="relative max-w-xs">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Search requests..."
-                  className="w-full rounded-lg border border-border bg-secondary/50 py-2 pl-10 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-            </FloatingCard>
-          </motion.div>
-        )}
+            {/* Search */}
+            <div className="relative max-w-xs">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search requests..."
+                className="w-full rounded-lg border border-border bg-secondary/50 py-2 pl-10 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
+              />
+            </div>
+          </FloatingCard>
+        </motion.div>
 
         {/* Leave Requests Table */}
         <motion.div variants={itemVariants}>
@@ -268,94 +268,195 @@ const LeaveManagementPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRequests.map((request, index) => (
-                    <motion.tr
-                      key={request.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="group border-b border-border/50 transition-colors hover:bg-muted/30"
-                    >
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-sm font-medium text-primary">
-                            {request.employeeName.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="font-medium text-foreground">
-                              {request.employeeName}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              {request.reason}
-                            </p>
-                          </div>
-                        </div>
+                  {filteredRequests.length === 0 ? (
+                    <tr>
+                      <td colSpan={isAdmin ? 6 : 5} className="py-8 text-center text-muted-foreground">
+                        No leave requests found.
                       </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className={`rounded-full border px-3 py-1 text-xs font-medium capitalize ${getTypeBadge(
-                            request.type
-                          )}`}
-                        >
-                          {request.type}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-sm text-foreground">
-                        {request.startDate} - {request.endDate}
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="font-display text-lg font-bold text-foreground">
-                          {request.days}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span
-                          className={`rounded-full border px-3 py-1 text-xs font-medium capitalize ${getStatusBadge(
-                            request.status
-                          )}`}
-                        >
-                          {request.status}
-                        </span>
-                      </td>
-                      {isAdmin && (
+                    </tr>
+                  ) : (
+                    filteredRequests.map((request, index) => (
+                      <motion.tr
+                        key={request.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="group border-b border-border/50 transition-colors hover:bg-muted/30"
+                      >
                         <td className="px-4 py-4">
-                          {request.status === 'pending' && (
-                            <div className="flex justify-end gap-2">
-                              <button className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/20 text-success transition-colors hover:bg-success/30">
-                                <Check className="h-4 w-4" />
-                              </button>
-                              <button className="flex h-8 w-8 items-center justify-center rounded-lg bg-destructive/20 text-destructive transition-colors hover:bg-destructive/30">
-                                <X className="h-4 w-4" />
-                              </button>
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-sm font-medium text-primary">
+                              {request.employeeName.charAt(0)}
                             </div>
-                          )}
+                            <div>
+                              <p className="font-medium text-foreground">
+                                {request.employeeName}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {request.reason}
+                              </p>
+                            </div>
+                          </div>
                         </td>
-                      )}
-                    </motion.tr>
-                  ))}
+                        <td className="px-4 py-4">
+                          <span
+                            className={`rounded-full border px-3 py-1 text-xs font-medium capitalize ${getTypeBadge(
+                              request.type
+                            )}`}
+                          >
+                            {request.type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-sm text-foreground">
+                          {request.startDate} - {request.endDate}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="font-display text-lg font-bold text-foreground">
+                            {request.days}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={`rounded-full border px-3 py-1 text-xs font-medium capitalize ${getStatusBadge(
+                              request.status
+                            )}`}
+                          >
+                            {request.status}
+                          </span>
+                        </td>
+                        {isAdmin && (
+                          <td className="px-4 py-4">
+                            {request.status === 'pending' && (
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  onClick={() => handleUpdateStatus(request.id, 'approved')}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/20 text-success transition-colors hover:bg-success/30"
+                                >
+                                  <Check className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateStatus(request.id, 'rejected')}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-destructive/20 text-destructive transition-colors hover:bg-destructive/30"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        )}
+                      </motion.tr>
+                    ))
+                  )}
                 </tbody>
               </table>
-            </div>
-
-            {/* Pagination */}
-            <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
-              <p className="text-sm text-muted-foreground">
-                Showing 1-{filteredRequests.length} of {filteredRequests.length} requests
-              </p>
-              <div className="flex gap-2">
-                <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
             </div>
           </FloatingCard>
         </motion.div>
       </motion.div>
 
-      {/* Apply Leave Modal would go here */}
+      {/* Apply Leave Modal */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl"
+            >
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="font-display text-2xl font-bold text-foreground">
+                  Apply for Leave
+                </h2>
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleApplyLeave} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full rounded-xl border border-border bg-secondary/50 px-4 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full rounded-xl border border-border bg-secondary/50 px-4 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">
+                    Leave Type
+                  </label>
+                  <select
+                    value={leaveType}
+                    onChange={(e) => setLeaveType(e.target.value as any)}
+                    className="w-full rounded-xl border border-border bg-secondary/50 px-4 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="paid">Paid Leave</option>
+                    <option value="sick">Sick Leave</option>
+                    <option value="unpaid">Unpaid Leave</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">
+                    Reason
+                  </label>
+                  <textarea
+                    required
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={3}
+                    placeholder="Brief description of your leave..."
+                    className="w-full rounded-xl border border-border bg-secondary/50 px-4 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <MagneticButton
+                    variant="secondary"
+                    className="w-full"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsModalOpen(false);
+                    }}
+                  >
+                    Cancel
+                  </MagneticButton>
+                  <MagneticButton
+                    variant="primary"
+                    className="w-full"
+                    type="submit"
+                  >
+                    Submit Application
+                  </MagneticButton>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </DashboardLayout>
   );
 };

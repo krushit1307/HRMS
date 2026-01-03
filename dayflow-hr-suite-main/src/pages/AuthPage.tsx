@@ -12,19 +12,30 @@ const AuthPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [employeeId, setEmployeeId] = useState('');
   const [error, setError] = useState('');
-  const { login, isLoading } = useAuth();
+  const { login, register, isLoading } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     try {
-      await login(email, password);
+      if (isLogin) {
+        await login(email, password);
+      } else {
+        if (!firstName || !lastName || !employeeId) {
+          setError('Please fill in all fields');
+          return;
+        }
+        await register(`${firstName} ${lastName}`, email, password, employeeId);
+      }
       navigate('/dashboard');
-    } catch (err) {
-      setError('Invalid email or password. Try admin@dayflow.com / admin123');
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed. Please check your credentials.');
     }
   };
 
@@ -68,7 +79,7 @@ const AuthPage = () => {
               workforce management
             </h1>
             <p className="mt-6 text-lg text-muted-foreground">
-              A modern HRMS designed to simplify employee management, attendance tracking, 
+              A modern HRMS designed to simplify employee management, attendance tracking,
               and payroll processing with an elegant, intuitive interface.
             </p>
 
@@ -129,11 +140,10 @@ const AuthPage = () => {
                   <button
                     key={tab}
                     onClick={() => setIsLogin(i === 0)}
-                    className={`relative flex-1 rounded-lg py-3 text-center font-display font-medium transition-colors ${
-                      (isLogin && i === 0) || (!isLogin && i === 1)
-                        ? 'text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
+                    className={`relative flex-1 rounded-lg py-3 text-center font-display font-medium transition-colors ${(isLogin && i === 0) || (!isLogin && i === 1)
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                      }`}
                   >
                     {tab}
                     {((isLogin && i === 0) || (!isLogin && i === 1)) && (
@@ -169,6 +179,8 @@ const AuthPage = () => {
                         </label>
                         <input
                           type="text"
+                          value={firstName}
+                          onChange={(e) => setFirstName(e.target.value)}
                           className="w-full rounded-xl border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
                           placeholder="John"
                         />
@@ -183,6 +195,8 @@ const AuthPage = () => {
                         </label>
                         <input
                           type="text"
+                          value={lastName}
+                          onChange={(e) => setLastName(e.target.value)}
                           className="w-full rounded-xl border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
                           placeholder="Doe"
                         />
@@ -197,6 +211,8 @@ const AuthPage = () => {
                       </label>
                       <input
                         type="text"
+                        value={employeeId}
+                        onChange={(e) => setEmployeeId(e.target.value)}
                         className="w-full rounded-xl border border-border bg-secondary/50 px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
                         placeholder="EMP001"
                       />

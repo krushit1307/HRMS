@@ -3,7 +3,6 @@ import {
   Users,
   Clock,
   Calendar,
-  TrendingUp,
   UserCheck,
   UserX,
   Briefcase,
@@ -19,6 +18,8 @@ import { AttendanceWidget } from '@/components/dashboard/AttendanceWidget';
 import { LeaveRequestsWidget } from '@/components/dashboard/LeaveRequestsWidget';
 import { RecentActivityWidget } from '@/components/dashboard/RecentActivityWidget';
 import { QuickStatsWidget } from '@/components/dashboard/QuickStatsWidget';
+import { storageService } from '@/services/storage';
+import { useState, useEffect } from 'react';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -46,75 +47,111 @@ const Dashboard = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'hr';
 
-  const stats = isAdmin
-    ? [
+  // Real stats state
+  const [stats, setStats] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (user) {
+      calculateStats();
+    }
+  }, [user, isAdmin]);
+
+  const calculateStats = () => {
+    if (!user) return;
+
+    if (isAdmin) {
+      const users = storageService.getUsers();
+      const attendance = storageService.getAttendance();
+      const leaves = storageService.getLeaves();
+      const today = new Date().toISOString().split('T')[0];
+
+      const totalEmployees = users.filter(u => u.role === 'employee').length;
+      const presentToday = attendance.filter(a => a.date === today && a.status === 'present').length;
+      const onLeaveToday = leaves.filter(l =>
+        l.status === 'approved' && l.startDate <= today && l.endDate >= today
+      ).length;
+      const absent = Math.max(0, totalEmployees - presentToday - onLeaveToday);
+
+      setStats([
         {
           label: 'Total Employees',
-          value: 248,
+          value: totalEmployees,
           icon: Users,
-          change: '+12%',
+          change: '+0%',
           isPositive: true,
           color: 'primary',
         },
         {
           label: 'Present Today',
-          value: 186,
+          value: presentToday,
           icon: UserCheck,
-          change: '+5%',
+          change: 'today',
           isPositive: true,
           color: 'success',
         },
         {
           label: 'On Leave',
-          value: 18,
+          value: onLeaveToday,
           icon: Calendar,
-          change: '-8%',
+          change: 'today',
           isPositive: true,
           color: 'warning',
         },
         {
           label: 'Absent',
-          value: 6,
+          value: absent,
           icon: UserX,
-          change: '+2%',
+          change: 'today',
           isPositive: false,
           color: 'destructive',
         },
-      ]
-    : [
+      ]);
+    } else {
+      const myAttendance = storageService.getAttendanceByUserId(user.id);
+      const myLeaves = storageService.getLeavesByUserId(user.id);
+
+      const daysPresent = myAttendance.filter(a => a.status === 'present').length;
+      const leavesTaken = myLeaves.filter(l => l.status === 'approved').reduce((acc, curr) => acc + curr.days, 0);
+      const leaveBalance = Math.max(0, 20 - leavesTaken);
+
+      const workHours = daysPresent * 8;
+
+      setStats([
         {
           label: 'Days Present',
-          value: 22,
+          value: daysPresent,
           icon: UserCheck,
-          change: '96%',
+          change: 'total',
           isPositive: true,
           color: 'success',
         },
         {
           label: 'Leave Balance',
-          value: 12,
+          value: leaveBalance,
           icon: Calendar,
-          change: 'days',
+          change: 'days left',
           isPositive: true,
           color: 'primary',
         },
         {
           label: 'Work Hours',
-          value: 176,
+          value: workHours,
           icon: Clock,
-          change: 'this month',
+          change: 'approx',
           isPositive: true,
           color: 'accent',
         },
         {
           label: 'Projects',
-          value: 4,
+          value: 2,
           icon: Briefcase,
           change: 'active',
           isPositive: true,
           color: 'warning',
         },
-      ];
+      ]);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -149,36 +186,33 @@ const Dashboard = () => {
             <FloatingCard key={stat.label} delay={index * 0.1}>
               <div className="flex items-start justify-between">
                 <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-xl ${
-                    stat.color === 'primary'
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl ${stat.color === 'primary'
                       ? 'bg-primary/10'
                       : stat.color === 'success'
-                      ? 'bg-success/10'
-                      : stat.color === 'warning'
-                      ? 'bg-warning/10'
-                      : stat.color === 'destructive'
-                      ? 'bg-destructive/10'
-                      : 'bg-accent/10'
-                  }`}
+                        ? 'bg-success/10'
+                        : stat.color === 'warning'
+                          ? 'bg-warning/10'
+                          : stat.color === 'destructive'
+                            ? 'bg-destructive/10'
+                            : 'bg-accent/10'
+                    }`}
                 >
                   <stat.icon
-                    className={`h-6 w-6 ${
-                      stat.color === 'primary'
+                    className={`h-6 w-6 ${stat.color === 'primary'
                         ? 'text-primary'
                         : stat.color === 'success'
-                        ? 'text-success'
-                        : stat.color === 'warning'
-                        ? 'text-warning'
-                        : stat.color === 'destructive'
-                        ? 'text-destructive'
-                        : 'text-accent'
-                    }`}
+                          ? 'text-success'
+                          : stat.color === 'warning'
+                            ? 'text-warning'
+                            : stat.color === 'destructive'
+                              ? 'text-destructive'
+                              : 'text-accent'
+                      }`}
                   />
                 </div>
                 <div
-                  className={`flex items-center gap-1 text-sm font-medium ${
-                    stat.isPositive ? 'text-success' : 'text-destructive'
-                  }`}
+                  className={`flex items-center gap-1 text-sm font-medium ${stat.isPositive ? 'text-success' : 'text-destructive'
+                    }`}
                 >
                   {stat.isPositive ? (
                     <ArrowUpRight className="h-4 w-4" />

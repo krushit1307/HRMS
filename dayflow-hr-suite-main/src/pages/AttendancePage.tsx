@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Clock,
@@ -17,6 +17,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { FloatingCard } from '@/components/ui/floating-card';
 import { MagneticButton } from '@/components/ui/magnetic-button';
 import { useAuth } from '@/contexts/AuthContext';
+import { storageService, AttendanceRecord } from '@/services/storage';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -35,23 +36,6 @@ const itemVariants = {
   },
 };
 
-interface AttendanceRecord {
-  id: string;
-  date: string;
-  checkIn: string;
-  checkOut: string;
-  status: 'present' | 'late' | 'absent' | 'half-day';
-  workHours: string;
-}
-
-const mockAttendance: AttendanceRecord[] = [
-  { id: '1', date: '2025-01-03', checkIn: '09:02 AM', checkOut: '06:15 PM', status: 'present', workHours: '9h 13m' },
-  { id: '2', date: '2025-01-02', checkIn: '09:45 AM', checkOut: '06:00 PM', status: 'late', workHours: '8h 15m' },
-  { id: '3', date: '2025-01-01', checkIn: '-', checkOut: '-', status: 'absent', workHours: '0h' },
-  { id: '4', date: '2024-12-31', checkIn: '08:55 AM', checkOut: '06:30 PM', status: 'present', workHours: '9h 35m' },
-  { id: '5', date: '2024-12-30', checkIn: '09:00 AM', checkOut: '01:00 PM', status: 'half-day', workHours: '4h 00m' },
-];
-
 const AttendancePage = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'hr';
@@ -59,18 +43,78 @@ const AttendancePage = () => {
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
 
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      loadAttendance();
+    }
+  }, [user]);
+
+  const loadAttendance = () => {
+    if (!user) return;
+    const records = storageService.getAttendanceByUserId(user.id);
+    setAttendanceRecords(records.reverse()); // Newest first
+
+    const today = new Date().toISOString().split('T')[0];
+    const record = records.find(a => a.date === today);
+
+    if (record) {
+      setTodayRecord(record);
+      if (record.checkIn && !record.checkOut) {
+        setIsCheckedIn(true);
+        setCheckInTime(record.checkIn);
+      } else if (record.checkIn && record.checkOut) {
+        setIsCheckedIn(false);
+        setCheckInTime(record.checkIn);
+      }
+    }
+  };
+
   const handleCheckIn = () => {
+    if (!user) return;
     const now = new Date();
-    setCheckInTime(now.toLocaleTimeString('en-US', {
+    const timeString = now.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
-    }));
+    });
+
+    const newRecord: AttendanceRecord = {
+      id: crypto.randomUUID(),
+      userId: user.id,
+      date: now.toISOString().split('T')[0],
+      checkIn: timeString,
+      checkOut: '',
+      status: 'present',
+      workHours: '0h 0m'
+    };
+
+    storageService.addAttendance(newRecord);
+    setCheckInTime(timeString);
     setIsCheckedIn(true);
+    setTodayRecord(newRecord);
+    loadAttendance();
   };
 
   const handleCheckOut = () => {
+    if (!todayRecord) return;
+    const now = new Date();
+    const timeString = now.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const updatedRecord = {
+      ...todayRecord,
+      checkOut: timeString,
+      workHours: '8h 30m' // Mock calc
+    };
+
+    storageService.updateAttendance(updatedRecord);
     setIsCheckedIn(false);
-    setCheckInTime(null);
+    setTodayRecord(updatedRecord);
+    loadAttendance();
   };
 
   const getStatusBadge = (status: AttendanceRecord['status']) => {
@@ -99,11 +143,15 @@ const AttendancePage = () => {
     }
   };
 
+  const presentDays = attendanceRecords.filter(a => a.status === 'present').length;
+  const lateDays = attendanceRecords.filter(a => a.status === 'late').length;
+  const absentDays = attendanceRecords.filter(a => a.status === 'absent').length;
+
   const stats = [
-    { label: 'Present Days', value: 22, total: 24, color: 'success' },
-    { label: 'Late Days', value: 1, total: 24, color: 'warning' },
-    { label: 'Absent Days', value: 1, total: 24, color: 'destructive' },
-    { label: 'Work Hours', value: '176h', color: 'primary' },
+    { label: 'Present Days', value: presentDays, total: 30, color: 'success' },
+    { label: 'Late Days', value: lateDays, total: 30, color: 'warning' },
+    { label: 'Absent Days', value: absentDays, total: 30, color: 'destructive' },
+    { label: 'Work Hours', value: `${presentDays * 8}h`, color: 'primary' },
   ];
 
   return (
@@ -130,21 +178,19 @@ const AttendancePage = () => {
           <div className="flex gap-2">
             <button
               onClick={() => setViewMode('daily')}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                viewMode === 'daily'
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${viewMode === 'daily'
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-muted'
-              }`}
+                }`}
             >
               Daily
             </button>
             <button
               onClick={() => setViewMode('weekly')}
-              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                viewMode === 'weekly'
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${viewMode === 'weekly'
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-muted'
-              }`}
+                }`}
             >
               Weekly
             </button>
@@ -161,15 +207,14 @@ const AttendancePage = () => {
               <p className="text-sm text-muted-foreground">{stat.label}</p>
               <div className="mt-2 flex items-baseline gap-1">
                 <span
-                  className={`font-display text-3xl font-bold ${
-                    stat.color === 'success'
+                  className={`font-display text-3xl font-bold ${stat.color === 'success'
                       ? 'text-success'
                       : stat.color === 'warning'
-                      ? 'text-warning'
-                      : stat.color === 'destructive'
-                      ? 'text-destructive'
-                      : 'text-primary'
-                  }`}
+                        ? 'text-warning'
+                        : stat.color === 'destructive'
+                          ? 'text-destructive'
+                          : 'text-primary'
+                    }`}
                 >
                   {stat.value}
                 </span>
@@ -193,9 +238,8 @@ const AttendancePage = () => {
 
               <div className="mb-6 text-center">
                 <motion.div
-                  className={`mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-2xl ${
-                    isCheckedIn ? 'bg-success/20' : 'bg-muted'
-                  }`}
+                  className={`mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-2xl ${isCheckedIn ? 'bg-success/20' : 'bg-muted'
+                    }`}
                   animate={{
                     scale: isCheckedIn ? [1, 1.05, 1] : 1,
                     boxShadow: isCheckedIn
@@ -208,13 +252,19 @@ const AttendancePage = () => {
                   }}
                 >
                   <Clock
-                    className={`h-12 w-12 ${
-                      isCheckedIn ? 'text-success' : 'text-muted-foreground'
-                    }`}
+                    className={`h-12 w-12 ${isCheckedIn ? 'text-success' : 'text-muted-foreground'
+                      }`}
                   />
                 </motion.div>
 
-                {isCheckedIn ? (
+                {todayRecord?.checkOut ? (
+                  <>
+                    <p className="text-muted-foreground">Day Completed</p>
+                    <p className="font-display text-3xl font-bold text-success">
+                      {todayRecord.workHours}
+                    </p>
+                  </>
+                ) : isCheckedIn ? (
                   <>
                     <p className="text-muted-foreground">Checked in at</p>
                     <p className="font-display text-3xl font-bold text-success">
@@ -228,7 +278,7 @@ const AttendancePage = () => {
                 )}
               </div>
 
-              {isCheckedIn ? (
+              {isCheckedIn && !todayRecord?.checkOut ? (
                 <MagneticButton
                   variant="secondary"
                   size="lg"
@@ -238,7 +288,7 @@ const AttendancePage = () => {
                   <LogOut className="h-5 w-5" />
                   Check Out
                 </MagneticButton>
-              ) : (
+              ) : !isCheckedIn && !todayRecord?.checkOut && (
                 <MagneticButton
                   variant="primary"
                   size="lg"
@@ -251,22 +301,26 @@ const AttendancePage = () => {
               )}
 
               {/* Today's summary */}
-              <div className="mt-6 space-y-3">
-                <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-3">
-                  <span className="text-sm text-muted-foreground">Check In</span>
-                  <span className="font-medium text-foreground">
-                    {checkInTime || '--:--'}
-                  </span>
+              {todayRecord && (
+                <div className="mt-6 space-y-3">
+                  <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-3">
+                    <span className="text-sm text-muted-foreground">Check In</span>
+                    <span className="font-medium text-foreground">
+                      {todayRecord.checkIn}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-3">
+                    <span className="text-sm text-muted-foreground">Check Out</span>
+                    <span className="font-medium text-foreground">
+                      {todayRecord.checkOut || '--:--'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-3">
+                    <span className="text-sm text-muted-foreground">Work Hours</span>
+                    <span className="font-medium text-primary">{todayRecord.workHours}</span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-3">
-                  <span className="text-sm text-muted-foreground">Check Out</span>
-                  <span className="font-medium text-foreground">--:--</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-3">
-                  <span className="text-sm text-muted-foreground">Work Hours</span>
-                  <span className="font-medium text-primary">0h 0m</span>
-                </div>
-              </div>
+              )}
             </FloatingCard>
           </motion.div>
 
@@ -305,47 +359,55 @@ const AttendancePage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {mockAttendance.map((record, index) => (
-                      <motion.tr
-                        key={record.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.05 }}
-                        className="border-b border-border/50 transition-colors hover:bg-muted/30"
-                      >
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium text-foreground">
-                              {record.date}
+                    {attendanceRecords.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                          No attendance records found.
+                        </td>
+                      </tr>
+                    ) : (
+                      attendanceRecords.map((record, index) => (
+                        <motion.tr
+                          key={record.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                          className="border-b border-border/50 transition-colors hover:bg-muted/30"
+                        >
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-medium text-foreground">
+                                {record.date}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-foreground">
+                            {record.checkIn}
+                          </td>
+                          <td className="px-4 py-4 text-foreground">
+                            {record.checkOut}
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="font-display font-bold text-primary">
+                              {record.workHours}
                             </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-foreground">
-                          {record.checkIn}
-                        </td>
-                        <td className="px-4 py-4 text-foreground">
-                          {record.checkOut}
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="font-display font-bold text-primary">
-                            {record.workHours}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(record.status)}
-                            <span
-                              className={`rounded-full border px-3 py-1 text-xs font-medium capitalize ${getStatusBadge(
-                                record.status
-                              )}`}
-                            >
-                              {record.status}
-                            </span>
-                          </div>
-                        </td>
-                      </motion.tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-2">
+                              {getStatusIcon(record.status)}
+                              <span
+                                className={`rounded-full border px-3 py-1 text-xs font-medium capitalize ${getStatusBadge(
+                                  record.status
+                                )}`}
+                              >
+                                {record.status}
+                              </span>
+                            </div>
+                          </td>
+                        </motion.tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -353,7 +415,7 @@ const AttendancePage = () => {
               {/* Pagination */}
               <div className="mt-4 flex items-center justify-between border-t border-border pt-4">
                 <p className="text-sm text-muted-foreground">
-                  Showing 1-5 of 24 records
+                  Showing 1-{attendanceRecords.length} of {attendanceRecords.length} records
                 </p>
                 <div className="flex gap-2">
                   <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
